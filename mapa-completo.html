@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rack Connections Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'rack-blue': '#1e40af',
+                        'rack-green': '#16a34a',
+                        'rack-yellow': '#ca8a04',
+                        'rack-red': '#dc2626',
+                        'rack-dark': '#0f172a'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+        }
+        
+        .save-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 41, 59, 0.9);
+            color: #10b981;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            display: none;
+        }
+        
+        .rack-card {
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+        }
+        
+        .rack-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 15px 10px -6px rgba(0, 0, 0, 0.2);
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .connection-line {
+            position: absolute;
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            z-index: 0;
+            transform-origin: 0 0;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .traffic-bar {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .traffic-fill {
+            height: 100%;
+            transition: width 0.5s ease;
+        }
+        
+        .rack-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .rack-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .draggable-rack {
+            cursor: move;
+            position: absolute;
+            user-select: none;
+        }
+        
+        .draggable-rack.dragging {
+            opacity: 0.7;
+            z-index: 100;
+        }
+        
+        .editable-title {
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        
+        .editable-title:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .editable-title:focus {
+            outline: 1px solid #3b82f6;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .icon-selector {
+            position: absolute;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 10px;
+            z-index: 1000;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            width: 200px;
+        }
+        
+        .icon-option {
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .icon-option:hover {
+            background-color: #334155;
+        }
+        
+        .connection-point {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 10;
+            border: 2px solid white;
+        }
+        
+        .connection-point:hover {
+            background-color: #60a5fa;
+        }
+        
+        .connection-point.top { top: -10px; left: 50%; transform: translateX(-50%); }
+        .connection-point.right { right: -10px; top: 50%; transform: translateY(-50%); }
+        .connection-point.bottom { bottom: -10px; left: 50%; transform: translateX(-50%); }
+        .connection-point.left { left: -10px; top: 50%; transform: translateY(-50%); }
+    </style>
+</head>
+<body class="text-gray-200">
+    <div id="saveIndicator" class="save-indicator">
+        <i class="fas fa-check-circle mr-2"></i> Changes saved automatically
+    </div>
+    
+    <script>
+        // Save indicator function
+        function showSaveIndicator() {
+            const indicator = document.getElementById('saveIndicator');
+            indicator.style.display = 'block';
+            setTimeout(() => {
+                indicator.style.display = 'none';
+            }, 2000);
+        }
+        
+        // Save all page data to localStorage
+        function savePageData() {
+            const racks = document.querySelectorAll('.draggable-rack');
+            const rackData = {};
+            
+            racks.forEach(rack => {
+                const id = rack.id;
+                const title = rack.querySelector('.editable-title').textContent;
+                const iconClass = rack.querySelector('.rack-icon').className;
+                const style = rack.getAttribute('style');
+                
+                rackData[id] = {
+                    title: title,
+                    iconClass: iconClass,
+                    style: style
+                };
+            });
+            
+            // Save connection data
+            const connectionData = [];
+            const connectionLines = document.querySelectorAll('.connection-line');
+            connectionLines.forEach(line => {
+                connectionData.push({
+                    style: line.getAttribute('style'),
+                    className: line.className,
+                    fromRack: line.dataset.from,
+                    toRack: line.dataset.to
+                });
+            });
+            
+            const pageData = {
+                racks: rackData,
+                connections: connectionData
+            };
+            
+            localStorage.setItem('rackPageData', JSON.stringify(pageData));
+            showSaveIndicator();
+        }
+        
+        // Save rack data to localStorage
+        function saveRackData() {
+            savePageData(); // Use the comprehensive save function
+        }
+        
+        // Load rack data from localStorage
+        function loadPageData() {
+            const pageData = JSON.parse(localStorage.getItem('rackPageData'));
+            if (!pageData) return;
+            
+            // Load rack data
+            const rackData = pageData.racks;
+            Object.keys(rackData).forEach(id => {
+                const rack = document.getElementById(id);
+                if (rack) {
+                    const data = rackData[id];
+                    rack.querySelector('.editable-title').textContent = data.title;
+                    rack.querySelector('.rack-icon').className = data.iconClass;
+                    rack.setAttribute('style', data.style);
+                }
+            });
+            
+            // Load connection data
+            const connectionData = pageData.connections;
+            connectionData.forEach(conn => {
+                const line = document.createElement('div');
+                line.className = `connection-line ${conn.className}`;
+                line.setAttribute('style', conn.style);
+                line.dataset.from = conn.fromRack;
+                line.dataset.to = conn.toRack;
+                document.querySelector('.relative.h-64').appendChild(line);
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load saved data
+            loadPageData();
+            
+            // Make rack titles editable
+            const rackTitles = document.querySelectorAll('.editable-title');
+            rackTitles.forEach(title => {
+                title.addEventListener('click', function() {
+                    const currentText = this.textContent;
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = currentText;
+                    input.className = 'bg-slate-700 text-white px-2 py-1 rounded';
+                    
+                    this.innerHTML = '';
+                    this.appendChild(input);
+                    input.focus();
+                    
+                    input.addEventListener('blur', () => {
+                        this.textContent = input.value || currentText;
+                        savePageData(); // Save on title change
+                    });
+                    
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            this.textContent = input.value || currentText;
+                            input.blur();
+                            savePageData(); // Save on Enter key
+                        }
+                    });
+                });
+            });
+            
+            // Make rack icons editable
+            const rackIcons = document.querySelectorAll('.rack-icon');
+            rackIcons.forEach(icon => {
+                icon.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const iconSelector = document.createElement('div');
+                    iconSelector.className = 'icon-selector';
+                    iconSelector.innerHTML = `
+                        <div class="icon-option" data-icon="fa-server"><i class="fas fa-server mr-2"></i> Server</div>
+                        <div class="icon-option" data-icon="fa-database"><i class="fas fa-database mr-2"></i> Database</div>
+                        <div class="icon-option" data-icon="fa-network-wired"><i class="fas fa-network-wired mr-2"></i> Network</div>
+                        <div class="icon-option" data-icon="fa-microchip"><i class="fas fa-microchip mr-2"></i> Microchip</div>
+                        <div class="icon-option" data-icon="fa-hdd"><i class="fas fa-hdd mr-2"></i> Storage</div>
+                    `;
+                    
+                    // Position the selector near the icon
+                    const rect = this.getBoundingClientRect();
+                    iconSelector.style.position = 'absolute';
+                    iconSelector.style.top = rect.bottom + 'px';
+                    iconSelector.style.left = rect.left + 'px';
+                    
+                    document.body.appendChild(iconSelector);
+                    
+                    // Handle icon selection
+                    iconSelector.querySelectorAll('.icon-option').forEach(option => {
+                        option.addEventListener('click', () => {
+                            const iconClass = option.getAttribute('data-icon');
+                            this.className = `fas ${iconClass} text-3xl rack-icon`;
+                            document.body.removeChild(iconSelector);
+                            savePageData(); // Save on icon change
+                        });
+                    });
+                    
+                    // Close selector when clicking elsewhere
+                    setTimeout(() => {
+                        document.addEventListener('click', function closeSelector(e) {
+                            if (!iconSelector.contains(e.target) && e.target !== icon) {
+                                document.body.removeChild(iconSelector);
+                                document.removeEventListener('click', closeSelector);
+                            }
+                        });
+                    }, 0);
+                });
+            });
+            
+            // Drag and drop functionality for racks
+            const racks = document.querySelectorAll('.draggable-rack');
+            
+            racks.forEach(rack => {
+                rack.addEventListener('mousedown', initDrag);
+            });
+            
+            function initDrag(e) {
+                const rack = e.target.closest('.draggable-rack');
+                if (!rack) return;
+                
+                rack.classList.add('dragging');
+                
+                const rect = rack.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+                
+                function drag(e) {
+                    const container = document.querySelector('.relative.h-64');
+                    const containerRect = container.getBoundingClientRect();
+                    
+                    let x = e.clientX - containerRect.left - offsetX;
+                    let y = e.clientY - containerRect.top - offsetY;
+                    
+                    // Boundary checks
+                    x = Math.max(0, Math.min(x, containerRect.width - rect.width));
+                    y = Math.max(0, Math.min(y, containerRect.height - rect.height));
+                    
+                    // Convert to percentages for responsive positioning
+                    const leftPercent = (x / containerRect.width) * 100;
+                    const topPercent = (y / containerRect.height) * 100;
+                    
+                    rack.style.left = leftPercent + '%';
+                    rack.style.top = topPercent + '%';
+                    
+                    // Update connections
+                    updateConnections();
+                }
+                
+                function stopDrag() {
+                    rack.classList.remove('dragging');
+                    document.removeEventListener('mousemove', drag);
+                    document.removeEventListener('mouseup', stopDrag);
+                    
+                    // Save position when dragging stops
+                    savePageData();
+                }
+                
+                function stopDrag() {
+                    rack.classList.remove('dragging');
+                    document.removeEventListener('mousemove', drag);
+                    document.removeEventListener('mouseup', stopDrag);
+                }
+                
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', stopDrag);
+            }
+            
+            // Connection functionality
+            let isConnecting = false;
+            let startRack = null;
+            let tempLine = null;
+            
+            
+            function updateConnections() {
+                const connectionLines = document.querySelectorAll('.connection-line');
+                connectionLines.forEach(line => {
+                    const fromRack = document.getElementById(line.dataset.from);
+                    const toRack = document.getElementById(line.dataset.to);
+                    
+                    if (fromRack && toRack) {
+                        const fromRect = fromRack.getBoundingClientRect();
+                        const toRect = toRack.getBoundingClientRect();
+                        const containerRect = document.querySelector('.relative.h-64').getBoundingClientRect();
+                        
+                        const startX = (fromRect.left + fromRect.width/2) - containerRect.left;
+                        const startY = (fromRect.top + fromRect.height/2) - containerRect.top;
+                        const endX = (toRect.left + toRect.width/2) - containerRect.left;
+                        const endY = (toRect.top + toRect.height/2) - containerRect.top;
+                        
+                        const dx = endX - startX;
+                        const dy = endY - startY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const angle = Math.atan2(dy, dx);
+                        
+                        line.setAttribute('style', `width: ${distance}px; left: ${startX}px; top: ${startY}px; transform: rotate(${angle}rad);`);
+                    }
+                });
+            }
+        });
+    </script>
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-12 text-center">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                    Rack Connections Dashboard
+                </h1>
+                <button onclick="savePageData()" class="bg-rack-blue hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center transition duration-300">
+                    <i class="fas fa-save mr-2"></i> Save Changes
+                </button>
+            </div>
+            <p class="text-gray-400 max-w-2xl mx-auto">
+                Monitor and manage your rack connections in real-time. View connection status, performance metrics, and system health.
+            </p>
+        </header>
+
+        <!-- Connection Overview -->
+        <div class="bg-slate-800 rounded-xl p-6 mb-10 shadow-xl">
+            <div class="flex flex-wrap justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">Connection Status</h2>
+                <a href="index.html?view=connections" class="text-blue-400 hover:text-blue-300 flex items-center">
+                    <i class="fas fa-link mr-2"></i> View Connection Details
+                </a>
+            </div>
+            
+            <!-- Connection Visualization -->
+            <div class="relative h-64 bg-slate-900 rounded-lg p-6 mb-6">
+                <!-- Racks -->
+                <div class="draggable-rack" id="rack1" style="top: 25%; left: 25%; transform: translate(-50%, -50%);" ondblclick="window.location.href='index.html?view=connections&rack=1'">
+                    <div class="w-24 h-24 rounded-xl bg-slate-700 border-2 border-blue-500 flex items-center justify-center">
+                        <i class="fas fa-server text-3xl text-blue-400 rack-icon"></i>
+                    </div>
+                    <p class="text-center mt-2 font-medium editable-title">Rack 1</p>
+                </div>
+                
+                <div class="draggable-rack" id="rack2" style="top: 50%; left: 25%; transform: translate(-50%, -50%);" ondblclick="window.location.href='index.html?view=connections&rack=2'">
+                    <div class="w-24 h-24 rounded-xl bg-slate-700 border-2 border-emerald-500 flex items-center justify-center">
+                        <i class="fas fa-server text-3xl text-emerald-400 rack-icon"></i>
+                    </div>
+                    <p class="text-center mt-2 font-medium editable-title">Rack 2</p>
+                </div>
+                
+                <div class="draggable-rack" id="rack3" style="top: 75%; left: 25%; transform: translate(-50%, -50%);" ondblclick="window.location.href='index.html?view=connections&rack=3'">
+                    <div class="w-24 h-24 rounded-xl bg-slate-700 border-2 border-amber-500 flex items-center justify-center">
+                        <i class="fas fa-server text-3xl text-amber-400 rack-icon"></i>
+                    </div>
+                    <p class="text-center mt-2 font-medium editable-title">Rack 3</p>
+                </div>
+                
+                <div class="draggable-rack" id="rack4" style="top: 50%; left: 75%; transform: translate(50%, -50%);" ondblclick="window.location.href='index.html?view=connections&rack=4'">
+                    <div class="w-24 h-24 rounded-xl bg-slate-700 border-2 border-rose-500 flex items-center justify-center">
+                        <i class="fas fa-server text-3xl text-rose-400 rack-icon"></i>
+                    </div>
+                    <p class="text-center mt-2 font-medium editable-title">Rack 4</p>
+                </div>
+            </div>
+            
+        </div>
+        
+</body>
+</html>

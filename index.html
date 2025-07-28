@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Network Rack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .port {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;   /* for tooltip positioning */
+        }
+        .port:hover {
+            transform: scale(1.1);
+        }
+        /* Tooltip that shows description on hover */
+        .port-tooltip {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #3b82f6;
+            border-radius: 4px;
+            padding: 4px 6px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .port:hover .port-tooltip {
+            opacity: 1;
+        }
+        .port.selected {
+            background-color: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+        .port.connected {
+            background-color: #3b82f6;
+        }
+        .connection-line {
+            position: absolute;
+            pointer-events: auto; /* allow mouse events */
+            z-index: 10;
+            transition: stroke 0.2s, stroke-width 0.2s;
+            filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+        .connection-line:hover {
+            stroke: #fbbf24 !important; /* amber-400 */
+            stroke-width: 5 !important;
+            filter: drop-shadow(2px 2px 3px rgba(0, 0, 0, 0.7));
+        }
+        .device {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .rack {
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        .port-label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 2px;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .device-name {
+            background: linear-gradient(90deg, #0f172a, transparent);
+            color: #e2e8f0;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+        .connection-info {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #e2e8f0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 1rem;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        .comment-popup {
+            position: absolute;
+            background: #1e293b;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            min-width: 200px;
+        }
+        #wireContextMenu {
+            min-width: 200px;
+        }
+        #wireContextMenu button {
+            transition: background 0.2s;
+        }
+        #wireContextMenu button:first-child {
+            border-top-left-radius: 0.375rem;
+            border-top-right-radius: 0.375rem;
+        }
+        #wireContextMenu button:last-child {
+            border-bottom-left-radius: 0.375rem;
+            border-bottom-right-radius: 0.375rem;
+        }
+        .comment-popup textarea {
+            width: 100%;
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 4px;
+            color: #e2e8f0;
+            padding: 8px;
+            resize: vertical;
+            min-height: 60px;
+            font-size: 0.875rem;
+        }
+        .comment-popup button {
+            margin-top: 8px;
+            padding: 4px 12px;
+            background: #3b82f6;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .comment-popup button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-4">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-center bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+            <i class="fas fa-server mr-2"></i>Interactive Network Rack YPF-1
+        </h1>
+        
+        <div class="mb-4 flex justify-center items-center space-x-4">
+            <button id="undoLastConnection" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-undo mr-1"></i>Undo Last Connection
+            </button>
+            <button id="redoLastConnection" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-redo mr-1"></i>Redo Last Connection
+            </button>
+            <button id="exportConfig" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-download mr-1"></i>Export Config
+            </button>
+            <button id="importConfig" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-upload mr-1"></i>Import Config
+            </button>
+            <button id="equipmentList" class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-server mr-1"></i>Equipos
+            </button>
+            <a href="mapa-completo.html" class="bg-amber-600 hover:bg-amber-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-map mr-1"></i>Mapa Completo
+            </a>
+            <button id="showAllConnections" class="bg-rose-600 hover:bg-rose-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-project-diagram mr-1"></i>Show All Connections
+            </button>
+            <button id="resetAll" class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-sm transition">
+                <i class="fas fa-trash-alt mr-1"></i>Reset All Connections & Names
+            </button>
+            <div class="flex items-center text-xs text-slate-400">
+                <i class="fas fa-save mr-1"></i>Autosave enabled
+            </div>
+            <div class="flex items-center">
+                <span class="mr-2 text-sm">Wire Color:</span>
+                <select id="wireColor" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm">
+                    <option value="#3b82f6" selected>Blue</option>
+                    <option value="#f59e0b">Yellow</option>
+                    <option value="#94a3b8">Grey</option>
+                    <option value="#64748b">Dark Grey</option>
+                    <option value="#1e293b">Black</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="rack rounded-lg p-8 relative">
+            <div class="flex flex-col md:flex-row gap-6">
+                <!-- Left Patch Panel (60 ports) -->
+                <div class="device rounded-lg p-4">
+                    <div class="device-name px-3 py-2 mb-3 rounded">
+                        <i class="fas fa-th mr-2"></i>Out-Ext
+                        <span class="status-indicator bg-green-500"></span>
+                    </div>
+                    <div class="flex space-x-4">
+                        <!-- Column 1: ports 1-30 -->
+                        <div class="flex flex-col space-y-1" id="leftPanelCol1">
+                            <!-- Ports 1-30 will be generated by JS -->
+                        </div>
+                        <!-- Column 2: ports 31-60 -->
+                        <div class="flex flex-col space-y-1" id="leftPanelCol2">
+                            <!-- Ports 31-60 will be generated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1">
+            <!-- Switch (Top) -->
+            <div class="device rounded-lg p-4 mb-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-network-wired mr-2"></i>48-Port Switch
+                    <span class="status-indicator bg-blue-500"></span>
+                </div>
+                <div class="flex flex-col space-y-2">
+                    <!-- Top row: ports 1-24 -->
+                    <div class="flex flex-row-reverse" id="switchTop">
+                        <!-- Ports 1-24 will be generated by JS -->
+                    </div>
+                    <!-- Bottom row: ports 25-48 -->
+                    <div class="flex flex-row-reverse" id="switchBottom">
+                        <!-- Ports 25-48 will be generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patch Panel (Below Switch) -->
+            <div class="device rounded-lg p-4 mb-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-th mr-2"></i>Patch Panel - 48 Port
+                    <span class="status-indicator bg-green-500"></span>
+                </div>
+                <div class="flex flex-col space-y-2">
+                    <!-- Top row: ports 1-24 -->
+                    <div class="flex" id="patchPanelTop">
+                        <!-- Ports 1-24 will be generated by JS -->
+                    </div>
+                    <!-- Bottom row: ports 25-48 -->
+                    <div class="flex" id="patchPanelBottom">
+                        <!-- Ports 25-48 will be generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Patch Panel 24 Port -->
+            <div class="device rounded-lg p-4 mb-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-th mr-2"></i>Patch Panel - 24 Port
+                    <span class="status-indicator bg-green-500"></span>
+                </div>
+                <div class="flex justify-center">
+                    <div class="flex" id="patchPanel24">
+                        <!-- Ports 1-24 will be generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- IDirect Evolution Satellital -->
+            <div class="device rounded-lg p-4 mb-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-satellite mr-2"></i>IDirect Evolution Satellital
+                    <span class="status-indicator bg-purple-500"></span>
+                </div>
+                <div class="flex justify-center">
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">OUTPUT</div>
+                        <div class="flex space-x-2" id="satellitalOutput">
+                            <!-- Single RJ-45 output port -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Router (Bottom) -->
+            <div class="device rounded-lg p-4">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-route mr-2"></i>Cisco 1100 series Router 
+                    <span class="status-indicator bg-yellow-500"></span>
+                </div>
+                <div class="flex justify-center space-x-4">
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">INPUT</div>
+                        <div class="flex space-x-2" id="routerInputs">
+                            <!-- Input ports -->
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">OUTPUT</div>
+                        <div class="grid grid-cols-4 gap-1" id="routerOutputs">
+                            <!-- Output ports -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cisco Router DCP2420 (RJ-45) -->
+            <div class="device rounded-lg p-4 mt-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-route mr-2"></i>Cisco Router DPC2420
+                    <span class="status-indicator bg-orange-500"></span>
+                </div>
+                <div class="flex justify-center">
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">OUTPUT</div>
+                        <div class="flex space-x-2" id="routerDPC2420">
+                            <!-- Single RJ-45 output port -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TP-Link Router TL-WR840N (RJ-45) -->
+            <div class="device rounded-lg p-4 mt-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-wifi mr-2"></i>TP-Link Router TL-WR840N
+                    <span class="status-indicator bg-teal-500"></span>
+                </div>
+                <div class="flex justify-center space-x-6">
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">INPUT</div>
+                        <div class="flex space-x-2" id="tplinkInput">
+                            <!-- Single RJ-45 WAN input -->
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">OUTPUT (LAN)</div>
+                        <div class="grid grid-cols-4 gap-1" id="tplinkOutputs">
+                            <!-- Four RJ-45 LAN outputs -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- E-BOX-9600-7 -->
+            <div class="device rounded-lg p-4 mt-6">
+                <div class="device-name px-3 py-2 mb-3 rounded">
+                    <i class="fas fa-ethernet mr-2"></i>E-BOX-9600-7
+                    <span class="status-indicator bg-pink-500"></span>
+                </div>
+                <div class="flex justify-center">
+                    <div>
+                        <div class="text-sm text-gray-400 mb-2">INPUT</div>
+                        <div class="flex space-x-2" id="eboxInput">
+                            <!-- Single RJ-45 input port -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Lines SVG Container -->
+            <svg id="connectionLines" class="absolute top-0 left-0 w-full h-full pointer-events-none">
+                <!-- Connection lines will be drawn here -->
+            </svg>
+        </div>
+    </div>
+
+    <!-- Connection Details – moved to bottom -->
+    <div id="connectionInfo" class="connection-info rounded-lg p-4 mt-8 max-w-5xl mx-auto">
+        <h3 class="text-lg font-bold mb-4 text-center">Connection Details</h3>
+
+        <div id="connectionList" class="mb-4"></div>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-slate-800 rounded">
+                <thead>
+                    <tr class="text-left border-b border-slate-600">
+                        <th class="px-4 py-2">#</th>
+                        <th class="px-4 py-2">De:</th>
+                        <th class="px-4 py-2">A:</th>
+                        <th class="px-4 py-2">Descripción</th>
+                        <th class="px-4 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody id="connectionsTable" class="divide-y divide-slate-700">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let selectedPort = null;
+        let selectedWireIndex = null;
+        let connections = [];
+        let portMap = {};
+        let portComments = {}; // Store comments for ports
+        let currentWireColor = '#3b82f6'; // Default blue
+        let pressTimer = null;
+        let isLongPress = false;
+
+        // Initialize devices
+        function initializeDevices() {
+            // Left Patch Panel - 60 ports in two vertical columns (normal numbering)
+            const leftPanelCol1 = document.getElementById('leftPanelCol1');
+            for (let i = 1; i <= 30; i++) {
+                const portDiv = createPort('LP', i);
+                leftPanelCol1.appendChild(portDiv);
+            }
+
+            const leftPanelCol2 = document.getElementById('leftPanelCol2');
+            for (let i = 31; i <= 60; i++) {
+                const portDiv = createPort('LP', i);
+                leftPanelCol2.appendChild(portDiv);
+            }
+
+            // Patch Panel - 48 ports split into 2 rows (1-24 top, 25-48 bottom)
+            const patchPanelTop = document.getElementById('patchPanelTop');
+            for (let i = 1; i <= 24; i++) {
+                const portDiv = createPort('PP48', i);
+                patchPanelTop.appendChild(portDiv);
+            }
+
+            const patchPanelBottom = document.getElementById('patchPanelBottom');
+            for (let i = 25; i <= 48; i++) {
+                const portDiv = createPort('PP48', i);
+                patchPanelBottom.appendChild(portDiv);
+            }
+
+            // Switch - 48 ports in two horizontal rows (odd numbers on top, even on bottom)
+            const switchTop = document.getElementById('switchTop');
+            for (let i = 47; i >= 1; i -= 2) {
+                const portDiv = createPort('SW', i);
+                switchTop.appendChild(portDiv);
+            }
+
+            const switchBottom = document.getElementById('switchBottom');
+            for (let i = 48; i >= 2; i -= 2) {
+                const portDiv = createPort('SW', i);
+                switchBottom.appendChild(portDiv);
+            }
+
+            // Router - 2 inputs
+            const routerInputs = document.getElementById('routerInputs');
+            for (let i = 1; i <= 2; i++) {
+                const portDiv = createPort('Cisco1100/I', i);
+                routerInputs.appendChild(portDiv);
+            }
+
+            // Patch Panel 24 Port
+            const patchPanel24 = document.getElementById('patchPanel24');
+            for (let i = 1; i <= 24; i++) {
+                const portDiv = createPort('PP24', i);
+                patchPanel24.appendChild(portDiv);
+            }
+
+            // Router - 8 outputs
+            const routerOutputs = document.getElementById('routerOutputs');
+            for (let i = 1; i <= 8; i++) {
+                const portDiv = createPort('Cisco1100/O', i);
+                routerOutputs.appendChild(portDiv);
+            }
+
+            // Cisco Router DPC2420 - 1 RJ-45 output
+            const routerDPC2420 = document.getElementById('routerDPC2420');
+            const portDiv = createPort('DPC2420/O', 1);
+            routerDPC2420.appendChild(portDiv);
+
+            // IDirect Evolution Satellital - 1 output
+            const satellitalOutput = document.getElementById('satellitalOutput');
+            const satellitalPort = createPort('ISAT', 1);
+            satellitalOutput.appendChild(satellitalPort);
+
+            // TP-Link TL-WR840N - 1 input + 4 outputs
+            const tplinkInput = document.getElementById('tplinkInput');
+            const tplinkInPort = createPort('WR840', 1);
+            tplinkInput.appendChild(tplinkInPort);
+
+            const tplinkOutputs = document.getElementById('tplinkOutputs');
+            for (let i = 1; i <= 4; i++) {
+                const outPort = createPort('WR840/O', i);
+                tplinkOutputs.appendChild(outPort);
+            }
+
+            // E-BOX-9600-7 - 1 input
+            const eboxInput = document.getElementById('eboxInput');
+            const eboxPort = createPort('EBOX', 1);
+            eboxInput.appendChild(eboxPort);
+        }
+
+        function createPort(device, number) {
+            const portDiv = document.createElement('div');
+            portDiv.className = 'port bg-gray-600 w-8 h-4 rounded-sm';
+            portDiv.dataset.device = device;
+            portDiv.dataset.number = number;
+            portDiv.dataset.id = `${device}-${number}`;
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'port-label';
+            labelDiv.textContent = number;
+            
+            const tooltip = document.createElement('span');
+            tooltip.className = 'port-tooltip';
+            tooltip.textContent = portComments[`${device}-${number}`] || '';
+            
+            const container = document.createElement('div');
+            container.className = 'flex flex-col items-center mx-0.5';
+            container.appendChild(portDiv);
+            container.appendChild(labelDiv);
+            portDiv.appendChild(tooltip);
+            
+            portDiv.addEventListener('mousedown', () => {
+                isLongPress = false;
+                pressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    openCommentBox(null, portDiv);
+                }, 500); // 500ms press duration
+            });
+            
+            portDiv.addEventListener('mouseup', () => {
+                clearTimeout(pressTimer);
+            });
+            
+            portDiv.addEventListener('mouseleave', () => {
+                clearTimeout(pressTimer);
+                highlightPortConnections(portDiv.dataset.id, false);
+            });
+            
+            portDiv.addEventListener('click', () => {
+                if (!isLongPress) {
+                    handlePortClick(portDiv);
+                }
+                isLongPress = false;
+            });
+            
+            portDiv.addEventListener('mouseenter', () => highlightPortConnections(portDiv.dataset.id, true));
+            
+            return container;
+        }
+
+        function handlePortClick(portDiv) {
+            const portId = portDiv.dataset.id;
+            
+            if (!selectedPort) {
+                // First selection
+                selectedPort = portDiv;
+                portDiv.classList.add('selected');
+            } else if (selectedPort === portDiv) {
+                // Deselect
+                selectedPort.classList.remove('selected');
+                selectedPort = null;
+            } else {
+                // Second selection - create connection
+                if (selectedPort.dataset.id !== portId) {
+                    createConnection(selectedPort, portDiv);
+                }
+                selectedPort.classList.remove('selected');
+                selectedPort = null;
+            }
+        }
+
+        function createConnection(port1, port2) {
+            const port1Id = port1.dataset.id;
+            const port2Id = port2.dataset.id;
+            
+            // Check if connection already exists in either direction
+            const exists = connections.some(conn => 
+                (conn.from === port1Id && conn.to === port2Id) || 
+                (conn.from === port2Id && conn.to === port1Id)
+            );
+            
+            if (exists) {
+                alert('This connection already exists!');
+                return;
+            }
+            
+            const connection = {
+                from: port1Id,
+                to: port2Id,
+                port1: port1,
+                port2: port2,
+                color: currentWireColor, // Use current color selection for new connection
+                description: ''
+            };
+            
+            connections.push(connection);
+            port1.classList.add('connected');
+            port2.classList.add('connected');
+            drawConnections();
+            updateConnectionInfo();
+        }
+
+        function drawConnections() {
+            const svg = document.getElementById('connectionLines');
+            svg.innerHTML = '';
+            
+            connections.forEach((conn, index) => {
+                // Get the port elements again in case they were recreated
+                const port1El = document.querySelector(`[data-id="${conn.from}"]`);
+                const port2El = document.querySelector(`[data-id="${conn.to}"]`);
+                
+                if (!port1El || !port2El) {
+                    console.warn(`Could not find ports for connection ${conn.from} → ${conn.to}`);
+                    return;
+                }
+                
+                // Update connection references
+                conn.port1 = port1El;
+                conn.port2 = port2El;
+                
+                const rect1 = port1El.getBoundingClientRect();
+                const rect2 = port2El.getBoundingClientRect();
+                const svgRect = svg.getBoundingClientRect();
+                
+                const x1 = rect1.left + rect1.width / 2 - svgRect.left;
+                const y1 = rect1.top + rect1.height / 2 - svgRect.top;
+                const x2 = rect2.left + rect2.width / 2 - svgRect.left;
+                const y2 = rect2.top + rect2.height / 2 - svgRect.top;
+                
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('stroke', conn.color);
+                line.setAttribute('stroke-width', '3');
+                line.setAttribute('data-conn-index', index);
+                line.classList.add('connection-line');
+                line.style.cursor = 'pointer';
+                line.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    
+                    // Deselect previous wire
+                    if (selectedWireIndex !== null && connections[selectedWireIndex]?.svgLine) {
+                        connections[selectedWireIndex].svgLine.setAttribute('stroke', connections[selectedWireIndex].color);
+                        connections[selectedWireIndex].svgLine.setAttribute('stroke-width', '3');
+                    }
+
+                    // Select new wire
+                    selectedWireIndex = index;
+                    line.setAttribute('stroke', '#fbbf24');
+                    line.setAttribute('stroke-width', '5');
+                    
+                    // Show context menu
+                    showWireContextMenu(e, index);
+                });
+
+                line.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    showWireContextMenu(e, index);
+                });
+
+                svg.appendChild(line);
+                conn.svgLine = line; // store reference
+            });
+        }
+
+        function updateConnectionInfo() {
+            const infoDiv = document.getElementById('connectionInfo');
+            const listDiv = document.getElementById('connectionList');
+            const tableBody = document.getElementById('connectionsTable');
+            
+            if (connections.length === 0) {
+                infoDiv.classList.add('hidden');
+                return;
+            }
+            
+            infoDiv.classList.remove('hidden');
+            listDiv.innerHTML = '';
+            tableBody.innerHTML = '';
+            
+            // Sort connections by device and port number
+            const sortedConnections = [...connections].sort((a, b) => {
+                // Extract device and port numbers for comparison
+                const extractParts = (id) => {
+                    const parts = id.split('-');
+                    const device = parts[0];
+                    const port = parseInt(parts[1]) || 0;
+                    return { device, port };
+                };
+
+                const aFrom = extractParts(a.from);
+                const bFrom = extractParts(b.from);
+                
+                // First sort by device
+                if (aFrom.device < bFrom.device) return -1;
+                if (aFrom.device > bFrom.device) return 1;
+                
+                // Then sort by port number
+                return aFrom.port - bFrom.port;
+            });
+
+            sortedConnections.forEach((conn, index) => {
+                const originalIndex = connections.indexOf(conn);
+                const connDiv = document.createElement('div');
+                connDiv.className = 'mb-2 text-sm';
+                connDiv.innerHTML = `
+                    <span class="text-blue-400">${conn.from}</span>
+                    <i class="fas fa-arrow-right mx-2"></i>
+                    <span class="text-green-400">${conn.to}</span>
+                    <button class="ml-2 text-red-400 hover:text-red-300" onclick="removeConnection(${originalIndex})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                listDiv.appendChild(connDiv);
+                
+                // Add to table
+                const row = document.createElement('tr');
+                row.className = 'border-b border-slate-700 hover:bg-slate-700 cursor-pointer';
+                row.dataset.connIndex = originalIndex;
+                const desc1 = portComments[conn.from] || '';
+                const desc2 = portComments[conn.to] || '';
+                const desc = desc1 && desc2 ? `${desc1} → ${desc2}` : desc1 || desc2;
+                row.innerHTML = `
+                    <td class="px-4 py-2 text-slate-300">${originalIndex + 1}</td>
+                    <td class="px-4 py-2 text-blue-400">${conn.from}</td>
+                    <td class="px-4 py-2 text-green-400">${conn.to}</td>
+                    <td class="px-4 py-2 text-slate-300">${desc}</td>
+                    <td class="px-4 py-2">
+                        <button class="text-red-400 hover:text-red-300" onclick="event.stopPropagation(); removeConnection(${originalIndex});">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </td>
+                `;
+
+                row.addEventListener('mouseenter', () => highlightConnection(index, true));
+                row.addEventListener('mouseleave', () => highlightConnection(index, false));
+                row.addEventListener('click', () => highlightConnection(index, true));
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        function removeConnection(index) {
+            const conn = connections[index];
+            conn.port1.classList.remove('connected');
+            conn.port2.classList.remove('connected');
+            connections.splice(index, 1);
+            drawConnections();
+            updateConnectionInfo();
+        }
+
+        // Reset all connections
+        document.getElementById('resetAll').addEventListener('click', () => {
+            if (confirm('Are you sure you want to reset ALL connections? This cannot be undone.')) {
+                // Remove all connections
+                connections.forEach(conn => {
+                    conn.port1.classList.remove('connected');
+                    conn.port2.classList.remove('connected');
+                });
+                connections = [];
+                portComments = {};
+                drawConnections();
+                updateConnectionInfo();
+                localStorage.removeItem('networkConnections');
+                localStorage.removeItem('portComments');
+            }
+        });
+
+        let lastUndoneConnection = null;
+
+        // Undo last connection
+        document.getElementById('undoLastConnection').addEventListener('click', () => {
+            if (connections.length > 0) {
+                lastUndoneConnection = connections[connections.length - 1];
+                const lastIndex = connections.length - 1;
+                removeConnection(lastIndex);
+            }
+        });
+
+        // Redo last undone connection
+        document.getElementById('redoLastConnection').addEventListener('click', () => {
+            if (lastUndoneConnection) {
+                const { from, to, color, description } = lastUndoneConnection;
+                const port1 = document.querySelector(`[data-id="${from}"]`);
+                const port2 = document.querySelector(`[data-id="${to}"]`);
+                if (port1 && port2) {
+                    const connection = {
+                        from, to,
+                        port1, port2,
+                        color: color || currentWireColor,
+                        description: description || ''
+                    };
+                    connections.push(connection);
+                    port1.classList.add('connected');
+                    port2.classList.add('connected');
+                    lastUndoneConnection = null;
+                    drawConnections();
+                    updateConnectionInfo();
+                }
+            }
+        });
+
+        // Open comment box for port
+        function openCommentBox(event, portDiv) {
+            if (event) event.stopPropagation();
+            
+            // Remove any existing popup
+            const existingPopup = document.querySelector('.comment-popup');
+            if (existingPopup) {
+                existingPopup.remove();
+            }
+            
+            const portId = portDiv.dataset.id;
+            const rect = portDiv.getBoundingClientRect();
+            
+            const popup = document.createElement('div');
+            popup.className = 'comment-popup';
+            popup.style.left = rect.left + 'px';
+            popup.style.top = (rect.bottom + 10) + 'px';
+            
+            const textarea = document.createElement('textarea');
+            textarea.placeholder = 'Enter comment...';
+            textarea.value = portComments[portId] || '';
+            
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = 'Save';
+            saveBtn.onclick = () => {
+                portComments[portId] = textarea.value;
+                // update tooltip text on the port
+                const tooltip = document.querySelector(`.port[data-id="${portId}"] .port-tooltip`);
+                if (tooltip) tooltip.textContent = textarea.value || '';
+                popup.remove();
+                updateConnectionInfo(); // Update connection table with new comments
+            };
+            
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.style.marginLeft = '8px';
+            cancelBtn.onclick = () => {
+                popup.remove();
+            };
+            
+            popup.appendChild(textarea);
+            popup.appendChild(saveBtn);
+            popup.appendChild(cancelBtn);
+            
+            document.body.appendChild(popup);
+            
+            textarea.focus();
+            
+            // Close popup when clicking outside
+            document.addEventListener('click', function closePopup(e) {
+                if (!popup.contains(e.target) && e.target !== portDiv) {
+                    popup.remove();
+                    document.removeEventListener('click', closePopup);
+                }
+            });
+        }
+
+        // Import configuration
+        document.getElementById('importConfig').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = event => {
+                    try {
+                        const config = JSON.parse(event.target.result);
+                        
+                        // Clear existing connections
+                        connections.forEach(conn => {
+                            conn.port1.classList.remove('connected');
+                            conn.port2.classList.remove('connected');
+                        });
+                        connections = [];
+                        
+                        // Create new connections with color
+                        config.forEach(item => {
+                            const port1 = document.querySelector(`[data-id="${item.from}"]`);
+                            const port2 = document.querySelector(`[data-id="${item.to}"]`);
+                            
+                            if (port1 && port2) {
+                                const connection = {
+                                    from: item.from,
+                                    to: item.to,
+                                    port1: port1,
+                                    port2: port2,
+                                    color: item.color || currentWireColor,
+                                    description: item.description || ''
+                                };
+                                connections.push(connection);
+                                port1.classList.add('connected');
+                                port2.classList.add('connected');
+                            }
+                        });
+                        
+                        drawConnections();
+                        updateConnectionInfo();
+                    } catch (error) {
+                        alert('Error importing configuration: ' + error.message);
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        });
+
+        // Export configuration
+        document.getElementById('exportConfig').addEventListener('click', () => {
+            const config = connections.map(conn => ({
+                from: conn.from,
+                to: conn.to,
+                color: conn.color,
+                description: conn.description || ''
+            }));
+            
+            const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'network-config.json';
+            a.click();
+        });
+
+        function updateConnectionColors() {
+            connections.forEach(conn => {
+                if (conn.svgLine) {
+                    conn.svgLine.setAttribute('stroke', conn.color);
+                }
+            });
+        }
+
+        function highlightConnection(index, enable) {
+            const conn = connections[index];
+            if (!conn || !conn.svgLine) return;
+            if (enable) {
+                conn.svgLine.setAttribute('stroke', '#fbbf24'); // amber-400
+                conn.svgLine.setAttribute('stroke-width', '5');
+            } else {
+                conn.svgLine.setAttribute('stroke', conn.color);
+                conn.svgLine.setAttribute('stroke-width', '3');
+            }
+        }
+
+        function highlightPortConnections(portId, enable) {
+            // Find all connections involving this port
+            const relatedConnections = connections.filter(conn => 
+                conn.from === portId || conn.to === portId
+            );
+            
+            // Highlight all related connections
+            relatedConnections.forEach(conn => {
+                const index = connections.indexOf(conn);
+                highlightConnection(index, enable);
+                
+                // Also highlight the connected ports
+                const otherPortId = conn.from === portId ? conn.to : conn.from;
+                const otherPort = document.querySelector(`[data-id="${otherPortId}"]`);
+                if (otherPort) {
+                    otherPort.style.boxShadow = enable ? '0 0 10px #fbbf24' : '';
+                }
+            });
+            
+            // Highlight the original port
+            const port = document.querySelector(`[data-id="${portId}"]`);
+            if (port) {
+                port.style.boxShadow = enable ? '0 0 10px #fbbf24' : '';
+            }
+        }
+
+        // Handle window resize with debounce
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                drawConnections();
+            }, 200); // 200ms debounce
+        });
+
+        // Wire color selection - only affects new connections
+        document.getElementById('wireColor').addEventListener('change', (e) => {
+            currentWireColor = e.target.value;
+        });
+
+        // Autosave functions
+        function saveConnections() {
+            const config = connections.map(conn => ({
+                from: conn.from,
+                to: conn.to,
+                color: conn.color,
+                description: conn.description
+            }));
+            localStorage.setItem('networkConnections', JSON.stringify(config));
+            localStorage.setItem('portComments', JSON.stringify(portComments));
+        }
+
+        function loadConnections() {
+            const savedConnections = localStorage.getItem('networkConnections');
+            const savedComments = localStorage.getItem('portComments');
+            
+            if (savedComments) {
+                portComments = JSON.parse(savedComments);
+                // Update tooltips with loaded comments
+                Object.keys(portComments).forEach(portId => {
+                    const tooltip = document.querySelector(`.port[data-id="${portId}"] .port-tooltip`);
+                    if (tooltip) tooltip.textContent = portComments[portId];
+                });
+            }
+
+            if (savedConnections) {
+                try {
+                    const config = JSON.parse(savedConnections);
+                    config.forEach(item => {
+                        const port1 = document.querySelector(`[data-id="${item.from}"]`);
+                        const port2 = document.querySelector(`[data-id="${item.to}"]`);
+                        
+                        if (port1 && port2) {
+                            const connection = {
+                                from: item.from,
+                                to: item.to,
+                                port1: port1,
+                                port2: port2,
+                                color: item.color || currentWireColor,
+                                description: item.description || ''
+                            };
+                            connections.push(connection);
+                            port1.classList.add('connected');
+                            port2.classList.add('connected');
+                        }
+                    });
+                    drawConnections();
+                    updateConnectionInfo();
+                } catch (error) {
+                    console.error('Error loading connections:', error);
+                }
+            }
+        }
+
+        // Initialize
+        initializeDevices();
+        loadConnections();
+        drawConnections();
+
+        // Handle keyboard delete for selected wire
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedWireIndex !== null) {
+                removeConnection(selectedWireIndex);
+                selectedWireIndex = null;
+            }
+        });
+
+        // Enhanced wire context menu functionality
+        function deleteSelectedConnection() {
+            const menu = document.getElementById('wireContextMenu');
+            const index = menu.dataset.connIndex;
+            if (index !== null) {
+                removeConnection(index);
+                menu.classList.add('hidden');
+                selectedWireIndex = null;
+            }
+        }
+
+        function showWireContextMenu(event, index) {
+            event.preventDefault();
+            const menu = document.getElementById('wireContextMenu');
+            menu.style.left = `${event.pageX}px`;
+            menu.style.top = `${event.pageY}px`;
+            menu.classList.remove('hidden');
+            menu.dataset.connIndex = index;
+
+            // Close menu when clicking elsewhere
+            const closeMenu = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.classList.add('hidden');
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu));
+        }
+
+        // Delete connection
+        document.getElementById('deleteWireBtn').addEventListener('click', () => {
+            const index = document.getElementById('wireContextMenu').dataset.connIndex;
+            if (index !== null) {
+                removeConnection(index);
+                document.getElementById('wireContextMenu').classList.add('hidden');
+                selectedWireIndex = null;
+            }
+        });
+
+        // Change ports
+        document.getElementById('changePortBtn').addEventListener('click', () => {
+            const index = document.getElementById('wireContextMenu').dataset.connIndex;
+            const conn = connections[index];
+            if (!conn) return;
+
+            // Create a mini form for better UX
+            const form = document.createElement('div');
+            form.className = 'p-4 bg-slate-700 rounded-lg';
+            form.innerHTML = `
+                <div class="mb-3">
+                    <label class="block text-sm mb-1">From Port:</label>
+                    <input type="text" id="newFromPort" value="${conn.from}" 
+                        class="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="mb-3">
+                    <label class="block text-sm mb-1">To Port:</label>
+                    <input type="text" id="newToPort" value="${conn.to}" 
+                        class="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button id="cancelPortChange" class="px-3 py-1 bg-slate-600 rounded text-sm">Cancel</button>
+                    <button id="confirmPortChange" class="px-3 py-1 bg-blue-600 rounded text-sm">Update</button>
+                </div>
+            `;
+
+            // Show in a modal
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.appendChild(form);
+            document.body.appendChild(modal);
+
+            // Handle cancel
+            document.getElementById('cancelPortChange').addEventListener('click', () => {
+                modal.remove();
+            });
+
+            // Handle confirm
+            document.getElementById('confirmPortChange').addEventListener('click', () => {
+                const newFrom = document.getElementById('newFromPort').value.trim();
+                const newTo = document.getElementById('newToPort').value.trim();
+
+                if (!newFrom || !newTo) {
+                    alert('Both port fields are required!');
+                    return;
+                }
+
+                const port1 = document.querySelector(`[data-id="${newFrom}"]`);
+                const port2 = document.querySelector(`[data-id="${newTo}"]`);
+
+                if (!port1 || !port2) {
+                    alert('One or both ports not found!');
+                    return;
+                }
+
+                // Remove old connection and create new one
+                removeConnection(index);
+                createConnection(port1, port2);
+
+                modal.remove();
+                document.getElementById('wireContextMenu').classList.add('hidden');
+            });
+        });
+
+        // Change color
+        document.getElementById('changeColorBtn').addEventListener('click', () => {
+            const index = document.getElementById('wireContextMenu').dataset.connIndex;
+            const conn = connections[index];
+            if (!conn) return;
+
+            // Create color picker
+            const colors = [
+                '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', 
+                '#ec4899', '#14b8a6', '#f97316', '#64748b', '#000000'
+            ];
+
+            const colorPicker = document.createElement('div');
+            colorPicker.className = 'p-3 bg-slate-700 rounded-lg grid grid-cols-5 gap-2';
+            
+            colors.forEach(color => {
+                const btn = document.createElement('button');
+                btn.className = 'w-8 h-8 rounded-full border-2 border-transparent hover:border-white';
+                btn.style.backgroundColor = color;
+                btn.addEventListener('click', () => {
+                    conn.color = color;
+                    if (conn.svgLine) {
+                        conn.svgLine.setAttribute('stroke', color);
+                    }
+                    colorPicker.parentElement.remove();
+                    document.getElementById('wireContextMenu').classList.add('hidden');
+                });
+                colorPicker.appendChild(btn);
+            });
+
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.appendChild(colorPicker);
+            document.body.appendChild(modal);
+
+            // Close on click outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        });
+
+        // Add comment to connection
+        document.getElementById('addCommentBtn').addEventListener('click', () => {
+            const index = document.getElementById('wireContextMenu').dataset.connIndex;
+            const conn = connections[index];
+            if (!conn) return;
+
+            const comment = prompt('Enter connection description:', conn.description || '');
+            if (comment !== null) {
+                conn.description = comment;
+                updateConnectionInfo();
+            }
+            document.getElementById('wireContextMenu').classList.add('hidden');
+        });
+        function showWireContextMenu(event, index) {
+            const menu = document.getElementById('wireContextMenu');
+            menu.style.left = event.pageX + 'px';
+            menu.style.top  = event.pageY + 'px';
+            menu.classList.remove('hidden');
+
+            // Store index for buttons
+            menu.dataset.connIndex = index;
+
+            // Close on outside click
+            const close = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.classList.add('hidden');
+                    document.removeEventListener('click', close);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', close));
+        }
+
+
+        document.getElementById('changePortBtn').addEventListener('click', () => {
+            const idx = document.getElementById('wireContextMenu').dataset.connIndex;
+            const conn = connections[idx];
+            if (!conn) return;
+
+            // Prompt user for new port on FROM side (quick demo)
+            const newFrom = prompt('Nuevo puerto origen (Ej: SW-1):', conn.from);
+            if (!newFrom) return;
+            const p1 = document.querySelector(`[data-id="${newFrom}"]`);
+            if (!p1) { alert('Puerto origen no encontrado'); return; }
+
+            // Prompt for new port on TO side
+            const newTo = prompt('Nuevo puerto destino (Ej: PP48-2):', conn.to);
+            if (!newTo) return;
+            const p2 = document.querySelector(`[data-id="${newTo}"]`);
+            if (!p2) { alert('Puerto destino no encontrado'); return; }
+
+            // Remove old connection and create new one
+            removeConnection(idx);
+            createConnection(p1, p2);
+            selectedWireIndex = null;
+            document.getElementById('wireContextMenu').classList.add('hidden');
+        });
+
+        // Set up autosave every 30 seconds
+        setInterval(saveConnections, 30000);
+
+        // Save when window is closing
+        window.addEventListener('beforeunload', saveConnections);
+    </script>
+
+    <!-- Wire Context Menu -->
+    <div id="wireContextMenu" class="hidden absolute bg-slate-800 border border-slate-600 rounded-md shadow-lg z-50 w-48">
+        <button id="deleteWireBtn" class="block w-full text-left px-4 py-2 hover:bg-slate-700 text-red-400" onclick="deleteSelectedConnection()">
+            <i class="fas fa-trash mr-2"></i>Delete Connection
+        </button>
+        <button id="changePortBtn" class="block w-full text-left px-4 py-2 hover:bg-slate-700 text-blue-400">
+            <i class="fas fa-exchange-alt mr-2"></i>Change Ports
+        </button>
+        <button id="changeColorBtn" class="block w-full text-left px-4 py-2 hover:bg-slate-700 text-purple-400">
+            <i class="fas fa-palette mr-2"></i>Change Color
+        </button>
+        <button id="addCommentBtn" class="block w-full text-left px-4 py-2 hover:bg-slate-700 text-green-400">
+            <i class="fas fa-comment mr-2"></i>Add Comment
+        </button>
+    </div>
+
+    <!-- Equipment List Modal -->
+    <div id="equipmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-slate-800 rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">Lista de Equipos</h3>
+                <button id="closeEquipmentModal" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-slate-700 p-4 rounded-lg">
+                    <h4 class="font-bold mb-2 text-blue-400"><i class="fas fa-network-wired mr-2"></i>Switch</h4>
+                    <p class="text-sm">48-Port Switch</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-lg">
+                    <h4 class="font-bold mb-2 text-green-400"><i class="fas fa-th mr-2"></i>Patch Panels</h4>
+                    <p class="text-sm">48-Port Patch Panel</p>
+                    <p class="text-sm">24-Port Patch Panel</p>
+                    <p class="text-sm">60-Port Patch Panel (Out-Ext)</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-lg">
+                    <h4 class="font-bold mb-2 text-yellow-400"><i class="fas fa-route mr-2"></i>Routers</h4>
+                    <p class="text-sm">Cisco Router - 2 Input / 8 Output</p>
+                    <p class="text-sm">Cisco Router DPC2420</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-lg">
+                    <h4 class="font-bold mb-2 text-teal-400"><i class="fas fa-wifi mr-2"></i>WiFi</h4>
+                    <p class="text-sm">TP-Link Router TL-WR840N</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-lg">
+                    <h4 class="font-bold mb-2 text-pink-400"><i class="fas fa-ethernet mr-2"></i>E-BOX</h4>
+                    <p class="text-sm">E-BOX-9600-7</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Show all connections button - opens conceptual diagram
+        document.getElementById('showAllConnections').addEventListener('click', () => {
+            const diagramWindow = window.open('', 'NetworkDiagram', 'width=1000,height=800');
+            diagramWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Network Connections Diagram</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        h1 { color: #3b82f6; text-align: center; }
+                        .connection { 
+                            margin: 10px 0; 
+                            padding: 10px; 
+                            background: #f3f4f6; 
+                            border-radius: 5px; 
+                            display: flex; 
+                            align-items: center;
+                        }
+                        .from, .to { 
+                            font-weight: bold; 
+                            padding: 5px 10px; 
+                            border-radius: 3px; 
+                            margin: 0 10px;
+                        }
+                        .from { background: #bfdbfe; color: #1e40af; }
+                        .to { background: #bbf7d0; color: #166534; }
+                        .arrow { font-size: 20px; color: #6b7280; }
+                        .legend { 
+                            display: flex; 
+                            justify-content: center; 
+                            margin: 20px 0; 
+                            gap: 20px;
+                        }
+                        .legend-item { display: flex; align-items: center; }
+                        .legend-color { 
+                            width: 15px; 
+                            height: 15px; 
+                            border-radius: 3px; 
+                            margin-right: 5px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Network Connections Diagram</h1>
+                    
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #bfdbfe;"></div>
+                            <span>Source Port</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #bbf7d0;"></div>
+                            <span>Destination Port</span>
+                        </div>
+                    </div>
+
+                    <div id="connections">
+                        ${connections.map(conn => `
+                            <div class="connection">
+                                <div class="from">${conn.from}</div>
+                                <div class="arrow">→</div>
+                                <div class="to">${conn.to}</div>
+                                <div style="margin-left: 20px; color: #4b5563;">
+                                    ${portComments[conn.from] || ''} ${portComments[conn.to] ? '→ ' + portComments[conn.to] : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div style="text-align: center; margin-top: 30px; color: #6b7280;">
+                        Total Connections: ${connections.length}
+                    </div>
+                </body>
+                </html>
+            `);
+            diagramWindow.document.close();
+            
+            // Also highlight connections on main page
+            connections.forEach((conn, index) => {
+                highlightConnection(index, true);
+                setTimeout(() => highlightConnection(index, false), 2000);
+            });
+        });
+
+        // Equipment list modal handling
+        document.getElementById('equipmentList').addEventListener('click', () => {
+            document.getElementById('equipmentModal').classList.remove('hidden');
+        });
+
+        document.getElementById('closeEquipmentModal').addEventListener('click', () => {
+            document.getElementById('equipmentModal').classList.add('hidden');
+        });
+    </script>
+</body>
+</html>

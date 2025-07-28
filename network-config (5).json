@@ -1,0 +1,80 @@
+[
+  {
+    "from": "PP48-37",
+    "to": "SW-24",
+    "color": "#3b82f6",
+    "description": ""
+  },
+  {
+    "from": "PP48-36",
+    "to": "SW-23",
+    "color": "#3b82f6",
+    "description": ""
+  },
+  {
+    "from": "PP48-3",
+    "to": "SW-6",
+    "color": "#3b82f6",
+    "description": ""
+  },
+  {
+    "from": "PP48-36",
+    "to": "LP-36",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "PP48-37",
+    "to": "LP-37",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "PP48-3",
+    "to": "LP-3",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "PP48-18",
+    "to": "LP-18",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "PP48-22",
+    "to": "LP-22",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "ISAT-1",
+    "to": "Cisco1100/I-1",
+    "color": "#f59e0b",
+    "description": ""
+  },
+  {
+    "from": "DPC2420/O-1",
+    "to": "WR840-1",
+    "color": "#f59e0b",
+    "description": ""
+  },
+  {
+    "from": "PP48-4",
+    "to": "LP-4",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "LP-5",
+    "to": "PP48-5",
+    "color": "#1e293b",
+    "description": ""
+  },
+  {
+    "from": "PP48-10",
+    "to": "LP-10",
+    "color": "#1e293b",
+    "description": ""
+  }
+]
